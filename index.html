@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Draw</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 90vw;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+            margin: 1rem;
+        }
+        .canvas-container {
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            background-color: #ffffff;
+            touch-action: none; /* Prevents unwanted scrolling on mobile */
+        }
+        #drawingCanvas {
+            cursor: crosshair;
+        }
+        .info-box {
+            width: 100%;
+            background-color: #f9fafb;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            text-align: center;
+        }
+        .info-box p {
+            margin: 0;
+            font-size: 1rem;
+            color: #4b5563;
+        }
+        .prediction-text {
+            font-weight: bold;
+            color: #10b981;
+            text-transform: capitalize;
+        }
+        .button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            transition: all 0.2s;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .button-primary {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .button-primary:hover {
+            background-color: #2563eb;
+        }
+        .button-secondary {
+            background-color: #f3f4f6;
+            color: #4b5563;
+            border: 1px solid #d1d5db;
+        }
+        .button-secondary:hover {
+            background-color: #e5e7eb;
+        }
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center text-gray-800">Quick Draw AI</h1>
+        <p class="text-center text-gray-600">Draw a simple doodle, and the AI will try to guess what it is!</p>
+        
+        <div class="canvas-container">
+            <canvas id="drawingCanvas" width="280" height="280"></canvas>
+        </div>
+
+        <div class="info-box">
+            <p id="prompt">Your drawing will appear here...</p>
+        </div>
+        
+        <div class="button-group">
+            <button id="predictButton" class="button button-primary">Predict</button>
+            <button id="clearButton" class="button button-secondary">Clear</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const predictButton = document.getElementById('predictButton');
+        const clearButton = document.getElementById('clearButton');
+        const promptDisplay = document.getElementById('prompt');
+
+        // Drawing state
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        // Set up the brush
+        ctx.lineWidth = 15;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'black';
+        ctx.fillStyle = 'white';
+
+        // Fill the canvas with a white background initially
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            promptDisplay.textContent = 'Your drawing will appear here...';
+        }
+
+        // --- Drawing Logic with improved smoothness ---
+        function draw(e) {
+            if (!isDrawing) return;
+
+            // Get mouse/touch coordinates relative to the canvas
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            const currentX = clientX - rect.left;
+            const currentY = clientY - rect.top;
+
+            // Use quadratic curves to smooth the line
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.quadraticCurveTo(lastX, lastY, currentX, currentY);
+            ctx.stroke();
+            
+            // Update the last position
+            lastX = currentX;
+            lastY = currentY;
+        }
+        
+        // Event listeners for drawing
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            lastX = e.clientX - rect.left;
+            lastY = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', () => isDrawing = false);
+        canvas.addEventListener('mouseout', () => isDrawing = false);
+        
+        // Event listeners for touch (for mobile devices)
+        canvas.addEventListener('touchstart', (e) => {
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            lastX = e.touches[0].clientX - rect.left;
+            lastY = e.touches[0].clientY - rect.top;
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (isDrawing) {
+                draw(e);
+            }
+            e.preventDefault();
+        }, { passive: false });
+        
+        canvas.addEventListener('touchend', () => isDrawing = false);
+
+        // --- Prediction Logic ---
+        predictButton.addEventListener('click', async () => {
+            // Get the image data from the canvas as a base64 string
+            const imageDataURL = canvas.toDataURL('image/png');
+            
+            // Show a loading message
+            promptDisplay.textContent = 'Thinking...';
+            
+            try {
+                // Send the image data to the Python backend
+                const response = await fetch('http://127.0.0.1:5000/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image: imageDataURL })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.prediction) {
+                        promptDisplay.innerHTML = `I'm guessing a <span class="prediction-text">${data.prediction}</span>!`;
+                    } else {
+                        promptDisplay.textContent = 'Oops, something went wrong with the prediction.';
+                    }
+                } else {
+                    promptDisplay.textContent = 'Error connecting to the server.';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                promptDisplay.textContent = 'Could not connect to the server. Please ensure the Python script is running.';
+            }
+        });
+
+        // Clear the canvas when the clear button is clicked
+        clearButton.addEventListener('click', clearCanvas);
+
+        // Initial setup
+        clearCanvas();
+    </script>
+</body>
+</html>
